@@ -65,13 +65,14 @@ def main(args):
     writer = SummaryWriter(log_dir=str(log_dir))
 
     decoder = net.decoder
-    vgg = net.vgg
+    content_enc = net.vgg
+    vgg = net.vgg2
 
     discriminator = net.AesDiscriminator()
 
+    content_enc.load_state_dict(torch.load(args.vgg))
     vgg.load_state_dict(torch.load(args.vgg))
-    vgg = nn.Sequential(*list(vgg.children())[:44])
-    network = net.Net(vgg, decoder, discriminator)
+    network = net.Net(content_enc, vgg, decoder, discriminator)
     network.train()
     network.to(device)
 
@@ -101,8 +102,12 @@ def main(args):
     print('training data size:', len(content_dataset))
     print('number of style classes:', len(style_dataset))
 
-    optimizer_G = torch.optim.Adam([{'params': network.decoder.parameters()},
-                                    {'params': network.transform.parameters()}], lr=args.lr)
+    optimizer_G1 = torch.optim.Adam([{'params': network.content_encoder.parameters()},
+                                     {'params': network.decoder.parameters()},
+                                     {'params': network.transform.parameters()}], lr=args.lr)
+    optimizer_G2 = torch.optim.Adam([{'params': network.decoder.parameters()},
+                                     {'params': network.transform.parameters()}], lr=args.lr)
+    optimizer_G = optimizer_G1
     optimizer_D = torch.optim.Adam(network.discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
 
     start_iter = -1
@@ -110,10 +115,12 @@ def main(args):
     # Enable it to train the model from checkpoints
     if args.resume:
         checkpoints = torch.load(args.checkpoints + '/checkpoints.pth.tar')
+        start_iter = checkpoints['epoch']
+        if start_iter >= args.stage1_iter:
+            optimizer_G = optimizer_G2
         network.load_state_dict(checkpoints['net'])
         optimizer_G.load_state_dict(checkpoints['optimizer_G'])
         optimizer_D.load_state_dict(checkpoints['optimizer_D'])
-        start_iter = checkpoints['epoch']
 
     # Training
     loss_c_meter = AverageMeter()
@@ -124,7 +131,9 @@ def main(args):
     loss_AR1_meter = AverageMeter()
     loss_AR2_meter = AverageMeter()
 
-    for i in range(start_iter + 1, args.stage1_iter + args.stage2_iter):
+    total_step = args.stage0_iter + args.stage1_iter + args.stage2_iter
+
+    for i in range(start_iter + 1, total_step):
         adjust_learning_rate(optimizer_G, iteration_count=i, args=args)
         adjust_learning_rate(optimizer_D, iteration_count=i, args=args)
         content_images = next(content_iter)
@@ -133,12 +142,19 @@ def main(args):
         content_images = content_images.to(device)
         style_images = style_images.to(device)
 
-        if i < args.stage1_iter:
-            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_id, _ = network(content_images, style_images)
+        if i == args.stage0_iter:
+            # fix the content encoder
+            for param in network.content_encoder.parameters():
+                param.requires_grad = False
+            optimizer_G = optimizer_G2
+
+        if i < args.stage0_iter + args.stage1_iter:
+            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_id, _ = network(content_images
+                                                                                           , style_images)
         else:
-            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_AR1, loss_AR2 = network(content_images,
-                                                                                                   style_images,
-                                                                                                   aesthetic=True)
+            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_AR1, loss_AR2 = network(content_images
+                                                                                                   , style_images
+                                                                                                   , aesthetic=True)
 
         # train discriminator
         optimizer_D.zero_grad()
@@ -150,12 +166,11 @@ def main(args):
 
         loss_gan_g = args.gan_weight * loss_gan_g
 
-        if i < args.stage1_iter:
+        if i < args.stage0_iter + args.stage1_iter:
             loss_AR1, loss_AR2 = torch.zeros(1), torch.zeros(1)
             loss_id = args.identity_weight * loss_id
             loss = loss_c + loss_s + loss_gan_g + loss_id
         else:
-
             loss_id = torch.zeros(1)
             loss_AR1 = args.AR1_weight * loss_AR1
             loss_AR2 = args.AR2_weight * loss_AR2
@@ -201,7 +216,7 @@ def main(args):
                   ' g lr:%.8f, d lr:%.8f,'
                   ' loss_content:%.4f, loss_style:%.4f, loss_gan_g:%.4f, loss_gan_d:%.4f'
                   ' loss_id:%.4f, loss_AR1:%.4f, loss_AR2:%.4f'
-                  % (i + 1, args.stage1_iter + args.stage2_iter
+                  % (i + 1, total_step
                      , g_lr, d_lr
                      , loss_c_val, loss_s_val, loss_gan_d_val, loss_gan_g_val
                      , loss_id_val, loss_AR1_val, loss_AR2_val))
@@ -219,7 +234,7 @@ def main(args):
             save_image(visualized_imgs, str(output_name), nrow=args.batch_size)
 
         # Save models
-        if (i + 1) % args.save_model_interval == 0 or (i + 1) == args.stage1_iter + args.stage2_iter:
+        if (i + 1) % args.save_model_interval == 0 or (i + 1) == total_step:
             checkpoints = {
                 "net": network.state_dict(),
                 "optimizer_G": optimizer_G.state_dict(),
@@ -227,6 +242,12 @@ def main(args):
                 "epoch": i
             }
             torch.save(checkpoints, checkpoints_dir / 'checkpoints.pth.tar')
+
+            state_dict = network.content_encoder.state_dict()
+            for key in state_dict.keys():
+                state_dict[key] = state_dict[key].to(torch.device('cpu'))
+            torch.save(state_dict, save_dir /
+                       'content_encoder_iter_{:d}.pth'.format(i + 1))
 
             state_dict = network.decoder.state_dict()
             for key in state_dict.keys():
@@ -275,6 +296,7 @@ if __name__ == '__main__':
     parser.add_argument('--crop_size', type=int, default=256, help='The size of cropped image: H and W')
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--lr_decay', type=float, default=5e-5)
+    parser.add_argument('--stage0_iter', type=int, default=80000)
     parser.add_argument('--stage1_iter', type=int, default=80000)
     parser.add_argument('--stage2_iter', type=int, default=80000)
     parser.add_argument('--batch_size', type=int, default=4)
