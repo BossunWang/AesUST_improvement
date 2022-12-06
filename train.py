@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import os
+import sys
 import shutil
 from functools import partial
 import torch
@@ -15,6 +16,7 @@ from tensorboardX import SummaryWriter
 from torchvision import transforms as T
 from torchvision.transforms import InterpolationMode
 from torchvision.utils import save_image
+sys.path.append("tools")
 
 import net
 from data.dataset import ImageDataset, ImageClassDataset
@@ -72,7 +74,12 @@ def main(args):
 
     content_enc.load_state_dict(torch.load(args.vgg))
     vgg.load_state_dict(torch.load(args.vgg))
-    network = net.Net(content_enc, vgg, decoder, discriminator)
+    if args.use_patch:
+        patch_discriminator = net.AesDiscriminator(in_channels=1)
+        network = net.Net(content_enc, vgg, decoder, discriminator
+                          , args.use_patch, patch_discriminator, args.patch_size, args.stride, args.top_k)
+    else:
+        network = net.Net(content_enc, vgg, decoder, discriminator)
     network.train()
     network.to(device)
 
@@ -108,7 +115,12 @@ def main(args):
     optimizer_G2 = torch.optim.Adam([{'params': network.decoder.parameters()},
                                      {'params': network.transform.parameters()}], lr=args.lr)
     optimizer_G = optimizer_G1
-    optimizer_D = torch.optim.Adam(network.discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
+    if args.use_patch:
+        optimizer_D = torch.optim.Adam([{'params': network.discriminator.parameters()},
+                                       {'params': network.pathc_discriminator.parameters()}]
+                                       , lr=args.lr, betas=(0.5, 0.999))
+    else:
+        optimizer_D = torch.optim.Adam(network.discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
 
     start_iter = -1
 
@@ -127,6 +139,8 @@ def main(args):
     loss_s_meter = AverageMeter()
     loss_gan_d_meter = AverageMeter()
     loss_gan_g_meter = AverageMeter()
+    loss_gan_d_patch_meter = AverageMeter()
+    loss_gan_g_patch_meter = AverageMeter()
     loss_id_meter = AverageMeter()
     loss_AR1_meter = AverageMeter()
     loss_AR2_meter = AverageMeter()
@@ -149,35 +163,39 @@ def main(args):
             optimizer_G = optimizer_G2
 
         if i < args.stage0_iter + args.stage1_iter:
-            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_id, _ = network(content_images
-                                                                                           , style_images)
+            stylized_results, loss_c, loss_s\
+                , loss_gan_d, loss_gan_g\
+                , loss_id, _\
+                , loss_gan_d_patch, loss_gan_g_patch = network(content_images, style_images)
         else:
-            stylized_results, loss_c, loss_s, loss_gan_d, loss_gan_g, loss_AR1, loss_AR2 = network(content_images
-                                                                                                   , style_images
-                                                                                                   , aesthetic=True)
+            stylized_results, loss_c, loss_s\
+                , loss_gan_d, loss_gan_g\
+                , loss_AR1, loss_AR2\
+                , loss_gan_d_patch, loss_gan_g_patch = network(content_images, style_images, aesthetic=True)
 
         # train discriminator
         optimizer_D.zero_grad()
-        loss_gan_d.backward(retain_graph=True)
+        loss_d_total = args.gan_weight * 0.5 * (loss_gan_d + loss_gan_d_patch)
+        loss_d_total.backward(retain_graph=True)
 
         # train generator
         loss_c = args.content_weight * loss_c
         loss_s = args.style_weight * loss_s
 
-        loss_gan_g = args.gan_weight * loss_gan_g
+        loss_gan_g_total = args.gan_weight * 0.5 * (loss_gan_g + loss_gan_g_patch)
 
         if i < args.stage0_iter + args.stage1_iter:
             loss_AR1, loss_AR2 = torch.zeros(1), torch.zeros(1)
             loss_id = args.identity_weight * loss_id
-            loss = loss_c + loss_s + loss_gan_g + loss_id
+            loss_g_total = loss_c + loss_s + loss_gan_g_total + loss_id
         else:
             loss_id = torch.zeros(1)
             loss_AR1 = args.AR1_weight * loss_AR1
             loss_AR2 = args.AR2_weight * loss_AR2
-            loss = loss_c + loss_s + loss_gan_g + loss_AR1 + loss_AR2
+            loss_g_total = loss_c + loss_s + loss_gan_g_total + loss_AR1 + loss_AR2
 
         optimizer_G.zero_grad()
-        loss.backward(retain_graph=True)
+        loss_g_total.backward(retain_graph=True)
         optimizer_G.step()
         optimizer_D.step()
 
@@ -185,6 +203,8 @@ def main(args):
         loss_s_meter.update(loss_s.item(), i + 1)
         loss_gan_d_meter.update(loss_gan_d.item(), i + 1)
         loss_gan_g_meter.update(loss_gan_g.item(), i + 1)
+        loss_gan_d_patch_meter.update(loss_gan_d_patch.item(), i + 1)
+        loss_gan_g_patch_meter.update(loss_gan_g_patch.item(), i + 1)
         loss_id_meter.update(loss_id.item(), i + 1)
         loss_AR1_meter.update(loss_AR1.item(), i + 1)
         loss_AR2_meter.update(loss_AR2.item(), i + 1)
@@ -198,14 +218,18 @@ def main(args):
             loss_s_val = loss_s_meter.avg
             loss_gan_d_val = loss_gan_d_meter.avg
             loss_gan_g_val = loss_gan_g_meter.avg
+            loss_gan_d_patch_val = loss_gan_d_patch_meter.avg
+            loss_gan_g_patch_val = loss_gan_g_patch_meter.avg
             loss_id_val = loss_id_meter.avg
             loss_AR1_val = loss_AR1_meter.avg
             loss_AR2_val = loss_AR2_meter.avg
 
             writer.add_scalar('loss_content', loss_c_val, i + 1)
             writer.add_scalar('loss_style', loss_s_val, i + 1)
-            writer.add_scalar('loss_gan_g', loss_gan_d_val, i + 1)
-            writer.add_scalar('loss_gan_d', loss_gan_g_val, i + 1)
+            writer.add_scalar('loss_gan_g', loss_gan_g_val, i + 1)
+            writer.add_scalar('loss_gan_d', loss_gan_d_val, i + 1)
+            writer.add_scalar('loss_gan_g_patch', loss_gan_g_patch_val, i + 1)
+            writer.add_scalar('loss_gan_d_patch', loss_gan_d_patch_val, i + 1)
             writer.add_scalar('loss_id', loss_id_val, i + 1)
             writer.add_scalar('loss_AR1', loss_AR1_val, i + 1)
             writer.add_scalar('loss_AR2', loss_AR2_val, i + 1)
@@ -214,17 +238,23 @@ def main(args):
 
             print('[%d/%d]'
                   ' g lr:%.8f, d lr:%.8f,'
-                  ' loss_content:%.4f, loss_style:%.4f, loss_gan_g:%.4f, loss_gan_d:%.4f'
+                  ' loss_content:%.4f, loss_style:%.4f,'
+                  ' loss_gan_g:%.4f, loss_gan_d:%.4f,'
+                  ' loss_gan_g_patch:%.4f, loss_gan_d_patch:%.4f,'
                   ' loss_id:%.4f, loss_AR1:%.4f, loss_AR2:%.4f'
                   % (i + 1, total_step
                      , g_lr, d_lr
-                     , loss_c_val, loss_s_val, loss_gan_d_val, loss_gan_g_val
+                     , loss_c_val, loss_s_val
+                     , loss_gan_g_val, loss_gan_d_val
+                     , loss_gan_g_patch_val, loss_gan_d_patch_val
                      , loss_id_val, loss_AR1_val, loss_AR2_val))
 
             loss_c_meter.reset()
             loss_s_meter.reset()
             loss_gan_d_meter.reset()
             loss_gan_g_meter.reset()
+            loss_gan_d_patch_meter.reset()
+            loss_gan_g_patch_meter.reset()
             loss_id_meter.reset()
             loss_AR1_meter.reset()
             loss_AR2_meter.reset()
@@ -310,7 +340,11 @@ if __name__ == '__main__':
     parser.add_argument('--identity_weight', type=float, default=50.0)
     parser.add_argument('--AR1_weight', type=float, default=0.5)
     parser.add_argument('--AR2_weight', type=float, default=500.0)
+    parser.add_argument('--patch_size', type=int, default=96, help='The number of patch size for patch extractor')
+    parser.add_argument('--stride', type=int, default=48, help='The number of stride for patch extractor')
+    parser.add_argument('--top_k', type=int, default=32, help='The number of top k for patch extractor')
     parser.add_argument('--resume', action='store_true', help='enable it to train the model from checkpoints')
+    parser.add_argument('--use_patch', action='store_true')
     args = parser.parse_args()
 
     main(args)

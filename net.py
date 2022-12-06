@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 from function import calc_mean_std, mean_variance_norm
+from tools.patch_extractor import extract_top_k_img_patches_by_sum
+from tools.guided_filter import GuidedFilter
 
 
 decoder = nn.Sequential(
@@ -284,8 +286,9 @@ class Transform(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, content_encoder, vgg, decoder, discriminator):
+    def __init__(self, content_encoder, vgg, decoder, discriminator, use_patch=False, patch_discriminator=None, patch_size=96, stride=48, top_k=8):
         super(Net, self).__init__()
+
         content_enc_layers = list(content_encoder.children())
         content_enc_1 = nn.Sequential(*content_enc_layers[:4])  # input -> relu1_1
         content_enc_2 = nn.Sequential(*content_enc_layers[4:11])  # relu1_1 -> relu2_1
@@ -312,6 +315,14 @@ class Net(nn.Module):
         for param in self.vgg.parameters():
             param.requires_grad = False
 
+        self.use_patch = use_patch
+        self.pathc_size = patch_size
+        self.stride = stride
+        self.top_k = top_k
+        if self.use_patch:
+            self.gf = GuidedFilter(r=5, eps=0.2)
+            self.pathc_discriminator = patch_discriminator
+
     # extract relu1_1, relu2_1, relu3_1, relu4_1, relu5_1 features from input image
     def encode_with_intermediate(self, encoder, input):
         results = []
@@ -335,7 +346,6 @@ class Net(nn.Module):
         target_mean, target_std = calc_mean_std(target)
         return self.mse_loss(input_mean, target_mean) + \
                self.mse_loss(input_std, target_std)
-
 
     def forward(self, content, style, aesthetic=False):
         content_feats = self.encode_with_intermediate(self.content_encoder, content)
@@ -366,6 +376,21 @@ class Net(nn.Module):
         # adversarial loss
         loss_gan_d = self.discriminator.compute_loss(style, 1) + self.discriminator.compute_loss(g_t.detach(), 0)
         loss_gan_g = self.discriminator.compute_loss(g_t, 1)
+
+        loss_gan_d_patch = torch.zeros(1)
+        loss_gan_g_patch = torch.zeros(1)
+        if self.use_patch:
+            # extract patches
+            top_k_target_patches \
+                = extract_top_k_img_patches_by_sum(style, self.patch_size, self.stride, self.top_k, self.gf)
+            target_patches_gray = torch.sum(top_k_target_patches, dim=1, keepdims=True) / 3
+            top_k_fake_patches \
+                = extract_top_k_img_patches_by_sum(g_t, self.patch_size, self.stride, self.top_k, self.gf)
+            fake_patches_gray = torch.sum(top_k_fake_patches, dim=1, keepdims=True) / 3
+
+            loss_gan_d_patch = self.pathc_discriminator.compute_loss(target_patches_gray, 1) \
+                               + self.pathc_discriminator.compute_loss(fake_patches_gray.detach(), 0)
+            loss_gan_g_patch = self.discriminator.compute_loss(fake_patches_gray, 1)
 
         if aesthetic:   # other losses in stage II
             # loss_AR1
@@ -403,6 +428,9 @@ class Net(nn.Module):
             loss_aesthetic = 0
 
         l_identity = 50 * l_identity1 + l_identity2
-        return g_t, loss_c, loss_s, loss_gan_d, loss_gan_g, l_identity, loss_aesthetic
+        return g_t, loss_c, loss_s\
+            , loss_gan_d, loss_gan_g\
+            , l_identity, loss_aesthetic\
+            , loss_gan_d_patch, loss_gan_g_patch
 
 
