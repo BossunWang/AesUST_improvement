@@ -1,5 +1,5 @@
-CUDA_VISIBLE_DEVICES=0 python train.py \
-  --content_dir "/media/glory/Transcend/Dataset/Scene/Photo_image_training_data" \
+CUDA_VISIBLE_DEVICES=1 python train.py \
+  --content_dir "../../Photo_image_training_data" \
   --style_dir "../art_dataset_v2" \
   --vgg "pretrained_weights/vgg_normalised.pth" \
   --sample_path "samples_v4/" \

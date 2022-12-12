@@ -42,12 +42,22 @@
 #--transform "train_log_v3/weights_v3/transformer_iter_400000.pth" \
 #--discriminator "train_log_v3/weights_v3/discriminator_iter_400000.pth"
 
+#python test_v3.py \
+#--content_dir ../creativity-transfer/outputs_Louis_cat \
+#--style_dir ../creativity-transfer/train_Louis \
+#--output train_log_v3/creativity_transfer_Louis_cat \
+#--vgg "pretrained_weights/vgg_normalised.pth" \
+#--content_encoder "train_log_v3/weights_v3/content_encoder_iter_400000.pth" \
+#--decoder "train_log_v3/weights_v3/decoder_iter_400000.pth" \
+#--transform "train_log_v3/weights_v3/transformer_iter_400000.pth" \
+#--discriminator "train_log_v3/weights_v3/discriminator_iter_400000.pth"
+
 python test_v3.py \
---content_dir ../creativity-transfer/outputs_Louis_cat \
---style_dir ../creativity-transfer/train_Louis \
---output train_log_v3/creativity_transfer_Louis_cat \
+--content_dir ../AesUST/inputs/select_content \
+--style_dir ../AesUST/inputs/select_style/ \
+--output train_log_v4/evaluation_outputs \
 --vgg "pretrained_weights/vgg_normalised.pth" \
---content_encoder "train_log_v3/weights_v3/content_encoder_iter_400000.pth" \
---decoder "train_log_v3/weights_v3/decoder_iter_400000.pth" \
---transform "train_log_v3/weights_v3/transformer_iter_400000.pth" \
---discriminator "train_log_v3/weights_v3/discriminator_iter_400000.pth"
+--content_encoder "train_log_v4/weights_v4/content_encoder_iter_400000.pth" \
+--decoder "train_log_v4/weights_v4/decoder_iter_400000.pth" \
+--transform "train_log_v4/weights_v4/transformer_iter_400000.pth" \
+--discriminator "train_log_v4/weights_v4/discriminator_iter_400000.pth"

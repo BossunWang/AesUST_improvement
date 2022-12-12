@@ -75,7 +75,7 @@ def main(args):
     content_enc.load_state_dict(torch.load(args.vgg))
     vgg.load_state_dict(torch.load(args.vgg))
     if args.use_patch:
-        patch_discriminator = net.AesDiscriminator(in_channels=1)
+        patch_discriminator = net.AesPatchDiscriminator(in_channels=1)
         network = net.Net(content_enc, vgg, decoder, discriminator
                           , args.use_patch, patch_discriminator, args.patch_size, args.stride, args.top_k)
     else:
@@ -175,14 +175,14 @@ def main(args):
 
         # train discriminator
         optimizer_D.zero_grad()
-        loss_d_total = args.gan_weight * 0.5 * (loss_gan_d + loss_gan_d_patch)
+        loss_d_total = args.gan_weight * (loss_gan_d + loss_gan_d_patch)
         loss_d_total.backward(retain_graph=True)
 
         # train generator
         loss_c = args.content_weight * loss_c
         loss_s = args.style_weight * loss_s
 
-        loss_gan_g_total = args.gan_weight * 0.5 * (loss_gan_g + loss_gan_g_patch)
+        loss_gan_g_total = args.gan_weight * (loss_gan_g + loss_gan_g_patch)
 
         if i < args.stage0_iter + args.stage1_iter:
             loss_AR1, loss_AR2 = torch.zeros(1), torch.zeros(1)

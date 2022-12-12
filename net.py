@@ -182,7 +182,60 @@ class AesDiscriminator(nn.Module):
                 )
             )
 
-        self.downsample = nn.AvgPool2d(in_channels, stride=2, padding=[1, 1], count_include_pad=False)
+        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+
+    # Compute the MSE between model output and scalar gt
+    def compute_loss(self, x, gt):
+        _, outputs = self.forward(x)
+
+        loss = sum([torch.mean((out - gt) ** 2) for out in outputs])
+        return loss
+
+    def forward(self, x):
+        outputs = []
+        feats = []
+        for i in range(len(self.models)):
+            feats.append(self.models[i](x))
+            outputs.append(self.score_models[i](self.models[i](x)))
+            x = self.downsample(x)
+
+        self.upsample = nn.Upsample(size=(feats[0].size()[2],feats[0].size()[3]), mode='nearest')
+        feat = feats[0]
+        for i in range(1,len(feats)):
+            feat += self.upsample(feats[i])
+
+        return feat, outputs
+
+
+class AesPatchDiscriminator(nn.Module):
+    def __init__(self, in_channels=3):
+        super(AesPatchDiscriminator, self).__init__()
+
+        def discriminator_block(in_filters, out_filters, normalize=True):
+            layers = [nn.Conv2d(in_filters, out_filters, 4, stride=2, padding=1)]
+            if normalize:
+                layers.append(nn.InstanceNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=False))
+            return layers
+
+        # Construct three discriminator models
+        self.models = nn.ModuleList()
+        self.score_models = nn.ModuleList()
+        for i in range(3):
+            self.models.append(
+                nn.Sequential(
+                    *discriminator_block(in_channels, 64, normalize=False),
+                    *discriminator_block(64, 128),
+                    *discriminator_block(128, 256)
+                )
+            )
+            self.score_models.append(
+                nn.Sequential(
+                    nn.Conv2d(256, 1, 3, padding=1)
+                )
+            )
+
+        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
 
     # Compute the MSE between model output and scalar gt
     def compute_loss(self, x, gt):
@@ -316,7 +369,7 @@ class Net(nn.Module):
             param.requires_grad = False
 
         self.use_patch = use_patch
-        self.pathc_size = patch_size
+        self.patch_size = patch_size
         self.stride = stride
         self.top_k = top_k
         if self.use_patch:
@@ -390,7 +443,7 @@ class Net(nn.Module):
 
             loss_gan_d_patch = self.pathc_discriminator.compute_loss(target_patches_gray, 1) \
                                + self.pathc_discriminator.compute_loss(fake_patches_gray.detach(), 0)
-            loss_gan_g_patch = self.discriminator.compute_loss(fake_patches_gray, 1)
+            loss_gan_g_patch = self.pathc_discriminator.compute_loss(fake_patches_gray, 1)
 
         if aesthetic:   # other losses in stage II
             # loss_AR1
