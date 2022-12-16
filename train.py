@@ -77,9 +77,10 @@ def main(args):
     if args.use_patch:
         patch_discriminator = net.AesPatchDiscriminator(in_channels=1)
         network = net.Net(content_enc, vgg, decoder, discriminator
-                          , args.use_patch, patch_discriminator, args.patch_size, args.stride, args.top_k)
+                          , args.use_patch, patch_discriminator, args.patch_size, args.stride, args.top_k
+                          , args.style_loss_type)
     else:
-        network = net.Net(content_enc, vgg, decoder, discriminator)
+        network = net.Net(content_enc, vgg, decoder, discriminator, style_loss_type=args.style_loss_type)
     network.train()
     network.to(device)
 
@@ -345,6 +346,7 @@ if __name__ == '__main__':
     parser.add_argument('--top_k', type=int, default=32, help='The number of top k for patch extractor')
     parser.add_argument('--resume', action='store_true', help='enable it to train the model from checkpoints')
     parser.add_argument('--use_patch', action='store_true')
+    parser.add_argument('--style_loss_type', type=str, default="second_order")
     args = parser.parse_args()
 
     main(args)

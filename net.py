@@ -339,7 +339,9 @@ class Transform(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, content_encoder, vgg, decoder, discriminator, use_patch=False, patch_discriminator=None, patch_size=96, stride=48, top_k=8):
+    def __init__(self, content_encoder, vgg, decoder, discriminator
+                 , use_patch=False, patch_discriminator=None, patch_size=96, stride=48, top_k=8
+                 , style_loss_type="second_order"):
         super(Net, self).__init__()
 
         content_enc_layers = list(content_encoder.children())
@@ -368,6 +370,7 @@ class Net(nn.Module):
         for param in self.vgg.parameters():
             param.requires_grad = False
 
+        self.style_loss_type = style_loss_type
         self.use_patch = use_patch
         self.patch_size = patch_size
         self.stride = stride
@@ -395,10 +398,19 @@ class Net(nn.Module):
 
     # style loss
     def calc_style_loss(self, input, target):
-        input_mean, input_std = calc_mean_std(input)
-        target_mean, target_std = calc_mean_std(target)
-        return self.mse_loss(input_mean, target_mean) + \
-               self.mse_loss(input_std, target_std)
+        if self.style_loss_type == "second_order":
+            input_mean, input_std = calc_mean_std(input)
+            target_mean, target_std = calc_mean_std(target)
+            return self.mse_loss(input_mean, target_mean) + \
+                   self.mse_loss(input_std, target_std)
+        elif self.style_loss_type == "efdm":
+            B, C, W, H = input.size(0), input.size(1), input.size(2), input.size(3)
+            value_content, index_content = torch.sort(input.view(B, C, -1))
+            value_style, index_style = torch.sort(target.view(B, C, -1))
+            inverse_index = index_content.argsort(-1)
+            return self.mse_loss(input.view(B, C, -1), value_style.gather(-1, inverse_index))
+        else:
+            raise NotImplementedError
 
     def forward(self, content, style, aesthetic=False):
         content_feats = self.encode_with_intermediate(self.content_encoder, content)
