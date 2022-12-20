@@ -102,12 +102,48 @@
 #--transform "train_log_v4/weights_v4/transformer_iter_400000.pth" \
 #--discriminator "train_log_v4/weights_v4/discriminator_iter_400000.pth"
 
+#python test_v3.py \
+#--content_dir ../AesUST/inputs/select_content \
+#--style_dir ../AesUST/inputs/select_style/ \
+#--output train_log_v5/evaluation_outputs \
+#--vgg "pretrained_weights/vgg_normalised.pth" \
+#--content_encoder "train_log_v5/weights_v5/content_encoder_iter_400000.pth" \
+#--decoder "train_log_v5/weights_v5/decoder_iter_400000.pth" \
+#--transform "train_log_v5/weights_v5/transformer_iter_400000.pth" \
+#--discriminator "train_log_v5/weights_v5/discriminator_iter_400000.pth"
+
+#python test_v3.py \
+#--content_dir ../creativity-transfer_develop/outputs_train_christmas_cat3_test_afhq_cat \
+#--style_dir Louis_Wain_selected \
+#--output /media/glory/Transcend/code/AesUST_improvement/train_log_v5/christmas_cat3_afhq_cat_Louis_Wain_selected_outputs \
+#--content_size 512 \
+#--style_size 512 \
+#--crop \
+#--vgg "pretrained_weights/vgg_normalised.pth" \
+#--content_encoder "train_log_v5/weights_v5/content_encoder_iter_400000.pth" \
+#--decoder "train_log_v5/weights_v5/decoder_iter_400000.pth" \
+#--transform "train_log_v5/weights_v5/transformer_iter_400000.pth" \
+#--discriminator "train_log_v5/weights_v5/discriminator_iter_400000.pth"
+
+#python test_v3.py \
+#--content_dir "/media/glory/Transcend/code/DRB-GAN/train_log_v4/stylized_outputs_christmas_cat3_test_afhq_cat/LOUIS WAIN" \
+#--style_dir Louis_Wain_selected \
+#--output /media/glory/Transcend/code/AesUST_improvement/train_log_v5/christmas_cat3_afhq_cat_DRBGAN_Louis_Wain_selected_outputs \
+#--content_size 512 \
+#--style_size 512 \
+#--crop \
+#--vgg "pretrained_weights/vgg_normalised.pth" \
+#--content_encoder "train_log_v5/weights_v5/content_encoder_iter_400000.pth" \
+#--decoder "train_log_v5/weights_v5/decoder_iter_400000.pth" \
+#--transform "train_log_v5/weights_v5/transformer_iter_400000.pth" \
+#--discriminator "train_log_v5/weights_v5/discriminator_iter_400000.pth"
+
 python test_v3.py \
 --content_dir ../AesUST/inputs/select_content \
 --style_dir ../AesUST/inputs/select_style/ \
---output train_log_v5/evaluation_outputs \
+--output train_log_v6/evaluation_outputs \
 --vgg "pretrained_weights/vgg_normalised.pth" \
---content_encoder "train_log_v5/weights_v5/content_encoder_iter_400000.pth" \
---decoder "train_log_v5/weights_v5/decoder_iter_400000.pth" \
---transform "train_log_v5/weights_v5/transformer_iter_400000.pth" \
---discriminator "train_log_v5/weights_v5/discriminator_iter_400000.pth"
+--content_encoder "train_log_v6/weights_v6/content_encoder_iter_400000.pth" \
+--decoder "train_log_v6/weights_v6/decoder_iter_400000.pth" \
+--transform "train_log_v6/weights_v6/transformer_iter_400000.pth" \
+--discriminator "train_log_v6/weights_v6/discriminator_iter_400000.pth"

@@ -129,7 +129,7 @@ def main(args):
     if args.resume:
         checkpoints = torch.load(args.checkpoints + '/checkpoints.pth.tar')
         start_iter = checkpoints['epoch']
-        if start_iter >= args.stage1_iter:
+        if start_iter >= args.stage1_iter > args.stage0_iter:
             optimizer_G = optimizer_G2
         network.load_state_dict(checkpoints['net'])
         optimizer_G.load_state_dict(checkpoints['optimizer_G'])
@@ -157,7 +157,7 @@ def main(args):
         content_images = content_images.to(device)
         style_images = style_images.to(device)
 
-        if i == args.stage0_iter:
+        if i == args.stage0_iter and args.stage0_iter < args.stage1_iter:
             # fix the content encoder
             for param in network.content_encoder.parameters():
                 param.requires_grad = False

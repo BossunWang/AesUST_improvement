@@ -169,42 +169,38 @@ def main(args):
 
         else:
             for style_path in style_paths:
-                try:
-                    content = content_tf(Image.open(str(content_path)))
-                    style = style_tf(Image.open(str(style_path)))
+                content = content_tf(Image.open(str(content_path)).convert("RGB"))
+                style = style_tf(Image.open(str(style_path)).convert("RGB"))
 
-                    if args.preserve_color:
-                        style = coral(style, content)
+                if args.preserve_color:
+                    style = coral(style, content)
 
-                    style = style.to(device).unsqueeze(0)
-                    content = content.to(device).unsqueeze(0)
+                style = style.to(device).unsqueeze(0)
+                content = content.to(device).unsqueeze(0)
 
-                    if args.cuda:
-                        torch.cuda.synchronize()
-                    start_time = time.time()
+                if args.cuda:
+                    torch.cuda.synchronize()
+                start_time = time.time()
 
-                    with torch.no_grad():
-                        output = style_transfer(content_encoder, vgg
-                                                , transform, decoder, discriminator
-                                                , content, style
-                                                , device
-                                                , args.alpha)
+                with torch.no_grad():
+                    output = style_transfer(content_encoder, vgg
+                                            , transform, decoder, discriminator
+                                            , content, style
+                                            , device
+                                            , args.alpha)
 
-                    if args.cuda:
-                        torch.cuda.synchronize()
-                    end_time = time.time()
-                    print('Elapsed time: %.4f seconds' % (end_time - start_time))
+                if args.cuda:
+                    torch.cuda.synchronize()
+                end_time = time.time()
+                print('Elapsed time: %.4f seconds' % (end_time - start_time))
 
-                    output.clamp(0, 255)
-                    output = output.cpu()
+                output.clamp(0, 255)
+                output = output.cpu()
 
-                    output_name = output_dir / '{:s}_stylized_{:s}{:s}'.format(
-                        content_path.stem, style_path.stem, args.save_ext)
-                    save_image(output, str(output_name))
+                output_name = output_dir / '{:s}_stylized_{:s}{:s}'.format(
+                    content_path.stem, style_path.stem, args.save_ext)
+                save_image(output, str(output_name))
 
-                except:
-                        traceback.print_exc()
-    
        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
